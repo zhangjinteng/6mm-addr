@@ -1,0 +1,33 @@
+{
+    "name": "zhangjinteng/6mm-addr",
+    "description": "Versioned multilingual address data and lookup services for 6MM applications.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "php": "^8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "SixMm\\Addr\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SixMm\\Addr\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "scripts": {
+        "test": "@php tests/run.php"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,30 @@
+{
+  "cities": {
+    "BD:Jessore": {
+      "nameZh": "杰索尔",
+      "source": "https://zh.wikipedia.org/wiki/%E6%9D%B0%E7%B4%A2%E5%B0%94"
+    },
+    "HK:NIS:Tung Chung": {
+      "nameZh": "东涌",
+      "source": "https://zh.wikipedia.org/wiki/%E6%9D%B1%E6%B6%8C"
+    }
+  },
+  "regions": {
+    "ID:Jakarta": {
+      "nameZh": "雅加达",
+      "source": "https://zh.wikipedia.org/wiki/%E9%9B%85%E5%8A%A0%E8%BE%BE"
+    },
+    "HK:Islands": {
+      "nameZh": "离岛区",
+      "source": "https://zh.wikipedia.org/wiki/%E9%9B%A2%E5%B3%B6%E5%8D%80"
+    }
+  },
+  "regionCodeAliases": [
+    {
+      "provider": "ipinfo",
+      "countryCode": "JP",
+      "code": "13",
+      "geonameId": 1850144
+    }
+  ]
+}

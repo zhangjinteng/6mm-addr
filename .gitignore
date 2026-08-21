@@ -1,0 +1,6 @@
+/composer.lock
+/vendor/
+/scripts/__pycache__/
+/scripts/.cache/
+/resources/*.sqlite-shm
+/resources/*.sqlite-wal
