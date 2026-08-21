@@ -1,0 +1,2 @@
+opencc-python-reimplemented==0.1.7
+torch==2.13.0

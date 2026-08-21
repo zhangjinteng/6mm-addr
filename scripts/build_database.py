@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import io
 import json
 import os
@@ -23,6 +24,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_DIR = PROJECT_ROOT / "scripts" / ".cache" / "geonames"
 DEFAULT_OUTPUT = PROJECT_ROOT / "resources" / "world-places.sqlite"
 DEFAULT_OVERRIDES = PROJECT_ROOT / "scripts" / "data" / "address-overrides.json"
+DEFAULT_SUPPLEMENTAL_NAMES = (
+    PROJECT_ROOT / "scripts" / "data" / "supplemental-names.json.gz"
+)
 CITY_SOURCES = ("cities500", "cities1000", "cities5000", "cities15000")
 OBSOLETE_COUNTRY_CODES = {"AN", "CS"}
 CHINESE_CHARACTER_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
@@ -33,6 +37,7 @@ class LocalizedName:
     value: str
     language: str
     score: int
+    source: str = "geonames"
 
 
 @dataclass
@@ -88,6 +93,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_OVERRIDES,
         help=f"Curated Chinese name overrides (default: {DEFAULT_OVERRIDES}).",
+    )
+    parser.add_argument(
+        "--supplemental-names",
+        type=Path,
+        default=DEFAULT_SUPPLEMENTAL_NAMES,
+        help=(
+            "CLDR, Wikidata, and generated Chinese names "
+            f"(default: {DEFAULT_SUPPLEMENTAL_NAMES})."
+        ),
     )
     parser.add_argument(
         "--force-download",
@@ -258,6 +272,39 @@ def read_overrides(path: Path) -> dict[str, object]:
     return normalized
 
 
+def read_supplemental_names(path: Path) -> dict[int, LocalizedName]:
+    if not path.exists():
+        return {}
+
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8") as source:
+        payload = json.load(source)
+
+    names: dict[int, LocalizedName] = {}
+    for raw_id, item in payload.get("names", {}).items():
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("nameZh", "")).strip()
+        source_name = str(item.get("source", "supplemental")).strip().lower()
+        if not value or not CHINESE_CHARACTER_PATTERN.search(value):
+            continue
+        try:
+            geoname_id = int(raw_id)
+        except ValueError:
+            continue
+        names[geoname_id] = LocalizedName(
+            value=value,
+            language="zh-Hans",
+            score=500,
+            source=source_name or "supplemental",
+        )
+    return names
+
+
+def chinese_source(name: LocalizedName | None) -> str | None:
+    return name.source if name else None
+
+
 def language_score(language: str, chinese: bool) -> int | None:
     normalized = language.strip()
     if chinese:
@@ -358,7 +405,9 @@ def build_payload(
             normalize_override_key(city.country_code, name_en, city.region_code)
         ) or city_overrides.get(normalize_override_key(city.country_code, name_en))
         if override:
-            chinese = LocalizedName(override["nameZh"], "override", 1000)
+            chinese = LocalizedName(
+                override["nameZh"], "zh-Hans", 1000, source="override"
+            )
             city_overrides_applied += 1
         if chinese:
             cities_with_chinese += 1
@@ -369,9 +418,7 @@ def build_payload(
                 "nameEn": name_en,
                 "nameZh": chinese.value if chinese else None,
                 "zhLanguage": chinese.language if chinese else None,
-                "zhSource": (
-                    "override" if chinese and chinese.language == "override" else "geonames"
-                ) if chinese else None,
+                "zhSource": chinese_source(chinese),
                 "population": city.population,
                 "aliasesEn": sorted(
                     {
@@ -396,7 +443,9 @@ def build_payload(
             normalize_override_key(region.country_code, name_en)
         )
         if override:
-            chinese = LocalizedName(override["nameZh"], "override", 1000)
+            chinese = LocalizedName(
+                override["nameZh"], "zh-Hans", 1000, source="override"
+            )
             region_overrides_applied += 1
         if chinese:
             regions_with_chinese += 1
@@ -407,9 +456,7 @@ def build_payload(
                 "nameEn": name_en,
                 "nameZh": chinese.value if chinese else None,
                 "zhLanguage": chinese.language if chinese else None,
-                "zhSource": (
-                    "override" if chinese and chinese.language == "override" else "geonames"
-                ) if chinese else None,
+                "zhSource": chinese_source(chinese),
                 "aliasesEn": sorted(
                     {
                         value
@@ -444,7 +491,7 @@ def build_payload(
                 "nameEn": english.value if english else country.name_en,
                 "nameZh": chinese.value if chinese else None,
                 "zhLanguage": chinese.language if chinese else None,
-                "zhSource": "geonames" if chinese else None,
+                "zhSource": chinese_source(chinese),
                 "regions": country_regions,
                 "cities": country_cities,
             }
@@ -702,6 +749,7 @@ def main() -> int:
     cache_dir = args.cache_dir.resolve()
     output_path = args.output.resolve()
     overrides_path = args.overrides.resolve()
+    supplemental_names_path = args.supplemental_names.resolve()
     sources = {
         args.city_source: cache_dir / f"{args.city_source}.zip",
         "alternateNamesV2": cache_dir / "alternateNamesV2.zip",
@@ -742,6 +790,16 @@ def main() -> int:
     relevant_ids.update(country.geoname_id for country in countries.values())
     english_names, chinese_names = choose_localized_names(
         sources["alternateNamesV2"], relevant_ids
+    )
+    supplemental_names = read_supplemental_names(supplemental_names_path)
+    supplemental_applied = 0
+    for geoname_id, localized_name in supplemental_names.items():
+        if geoname_id in relevant_ids and geoname_id not in chinese_names:
+            chinese_names[geoname_id] = localized_name
+            supplemental_applied += 1
+    print(
+        f"[parse] supplemental Chinese names: {supplemental_applied:,} applied "
+        f"from {supplemental_names_path.name}"
     )
     payload = build_payload(
         args.city_source,

@@ -31,9 +31,44 @@ $assertTrue = static function (bool $condition, string $message) use (&$assertio
 
 $database = new AddressDatabase();
 $repository = new AddressRepository($database);
+$connection = $database->connection();
 
 $assertTrue(is_file($database->path()), 'The bundled SQLite database must exist.');
 $assertSame('1', $repository->metadata('schemaVersion'), 'The schema version must be available.');
+
+$expectedCoverage = [
+    'countries' => 250,
+    'regions' => 3865,
+    'cities' => 235011,
+];
+foreach ($expectedCoverage as $table => $expectedCount) {
+    $coverage = $connection->query(sprintf(
+        "SELECT COUNT(*) AS total, SUM(CASE WHEN name_zh IS NULL OR TRIM(name_zh) = '' THEN 1 ELSE 0 END) AS missing FROM %s",
+        $table
+    ))->fetch(PDO::FETCH_ASSOC);
+    $assertSame(
+        $expectedCount,
+        (int) ($coverage['total'] ?? 0),
+        sprintf('%s row count must remain stable.', $table)
+    );
+    $assertSame(
+        0,
+        (int) ($coverage['missing'] ?? 0),
+        sprintf('%s Chinese coverage must be 100%%.', $table)
+    );
+
+    $invalidChinese = 0;
+    $names = $connection->query(sprintf('SELECT name_zh FROM %s', $table));
+    while (($name = $names->fetchColumn()) !== false) {
+        if (preg_match(
+            '/[\x{3400}-\x{4DBF}\x{4E00}-\x{9FFF}\x{F900}-\x{FAFF}]/u',
+            (string) $name
+        ) !== 1) {
+            $invalidChinese++;
+        }
+    }
+    $assertSame(0, $invalidChinese, sprintf('%s Chinese names must contain a CJK character.', $table));
+}
 
 $japan = $repository->country('jp');
 $assertSame('Japan', $japan['names']['en'] ?? null, 'Country English names should resolve.');
@@ -92,7 +127,7 @@ $assertSame('Unknown City', $fallback['city_names']['zh'], 'Missing Chinese name
 
 $writeWasBlocked = false;
 try {
-    $database->connection()->exec("INSERT INTO metadata (key, value) VALUES ('write-test', '1')");
+    $connection->exec("INSERT INTO metadata (key, value) VALUES ('write-test', '1')");
 } catch (PDOException) {
     $writeWasBlocked = true;
 }
